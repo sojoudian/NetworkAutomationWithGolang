@@ -23,8 +23,8 @@ To run this project, you need:
 
 2. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/network-automation-go.git
-   cd network-automation-go
+   git clone https://github.com/sojoudian/NetworkAutomationWithGolang.git
+   cd NetworkAutomationWithGolang
    ```
 
 3. **Install dependencies**:
@@ -58,5 +58,5 @@ This project is licensed under the MIT License.
 Contributions are welcome! Please fork the repository and submit a pull request for any enhancements or bug fixes.
 
 ## Contact
-For any inquiries, please contact [your.email@example.com](mailto:your.email@example.com).
+For any inquiries, please contact [Me](https://maziar.work).
 

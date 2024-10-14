@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"log"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func saveRunningToStartup() {
@@ -19,7 +20,7 @@ func saveRunningToStartup() {
 	}
 
 	// Connect to the device (replace with your actual device details)
-	conn, err := ssh.Dial("tcp", "192.168.122.100:22", config)
+	conn, err := ssh.Dial("tcp", "192.168.2.2:22", config)
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
@@ -34,7 +35,7 @@ func saveRunningToStartup() {
 
 	// Request a pseudo-terminal for interactive input/output
 	modes := ssh.TerminalModes{
-		ssh.ECHO:  0,     // Disable echo
+		ssh.ECHO:          0,     // Disable echo
 		ssh.TTY_OP_ISPEED: 14400, // Input speed = 14.4kbaud
 		ssh.TTY_OP_OSPEED: 14400, // Output speed = 14.4kbaud
 	}
@@ -60,7 +61,7 @@ func saveRunningToStartup() {
 		"enable\n",
 		"cisco\n", // Assuming 'cisco' is the enable password
 		"copy running-config startup-config\n",
-		"\n", // Confirm the copy action
+		"\n",                                    // Confirm the copy action
 		"show running-config | include clock\n", // Verify the running config
 	}
 
