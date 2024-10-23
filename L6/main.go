@@ -3,27 +3,35 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/howeyc/gopass"
 )
 
 func main() {
-	// Take user inputs for the server IP, username, and password
+	// Take user inputs for the server IP and username
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the Debian server IP address: ")
 	serverIP, _ := reader.ReadString('\n')
-	serverIP = serverIP[:len(serverIP)-1] // Trim newline
+	serverIP = strings.TrimSpace(serverIP) // Trim newline
 
 	fmt.Print("Enter the username: ")
 	username, _ := reader.ReadString('\n')
-	username = username[:len(username)-1] // Trim newline
+	username = strings.TrimSpace(username) // Trim newline
 
+	// Prompt for password securely (masked with '*')
 	fmt.Print("Enter the password: ")
-	password, _ := reader.ReadString('\n')
-	password = password[:len(password)-1] // Trim newline
+	passwordBytes, err := gopass.GetPasswdMasked() // Password input is masked with '*'
+	if err != nil {
+		log.Fatalf("Failed to get password: %v", err)
+	}
+	password := string(passwordBytes)
 
 	// SSH configuration
 	config := &ssh.ClientConfig{
@@ -49,34 +57,75 @@ func main() {
 	}
 	defer session.Close()
 
-	// // Capture both stdout and stderr from the session
-	// var stdoutBuf, stderrBuf io.Writer
-	// session.Stdout = os.Stdout
-	// session.Stderr = os.Stderr
-
-	// Run the necessary commands on the remote server
-	commands := `
-	echo "# Debian 12 (Bookworm) main repositories" | sudo tee -a /etc/apt/sources.list
-	echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	echo "deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	echo "# Debian 12 (Bookworm) updates" | sudo tee -a /etc/apt/sources.list
-	echo "deb http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	echo "deb-src http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	echo "# Security updates" | sudo tee -a /etc/apt/sources.list
-	echo "deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	echo "deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	echo "# Backports (optional, if you want newer versions of some packages)" | sudo tee -a /etc/apt/sources.list
-	echo "deb http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	echo "deb-src http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
-	sudo apt update
-	sudo apt upgrade -y
-	`
-
-	// Run the commands on the remote server
-	err = session.Run(commands)
-	if err != nil {
-		log.Fatalf("Failed to run commands on remote server: %v", err)
+	// Get a pseudo-terminal (PTY) for interaction with `su -`
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          0,     // Disable echoing
+		ssh.TTY_OP_ISPEED: 14400, // Input speed = 14.4kbaud
+		ssh.TTY_OP_OSPEED: 14400, // Output speed = 14.4kbaud
 	}
 
-	fmt.Println("Commands executed successfully on the remote server.")
+	// Request a PTY to handle interactive commands
+	err = session.RequestPty("xterm", 80, 40, modes)
+	if err != nil {
+		log.Fatalf("Failed to request PTY: %v", err)
+	}
+
+	// Start the shell
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		log.Fatalf("Failed to get stdin pipe: %v", err)
+	}
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		log.Fatalf("Failed to get stdout pipe: %v", err)
+	}
+	session.Stderr = os.Stderr
+
+	// Start the shell session
+	err = session.Shell()
+	if err != nil {
+		log.Fatalf("Failed to start shell: %v", err)
+	}
+
+	// Switch to root user with `su -` and provide password
+	go func() {
+		// Send `su -` command
+		fmt.Fprintln(stdin, "su -")
+
+		// Simulate typing the password for `su -`
+		time.Sleep(1 * time.Second) // Wait for the prompt
+		fmt.Fprintln(stdin, password)
+
+		// Run the necessary commands after switching to root
+		fmt.Fprintln(stdin, "
+echo "# Debian 12 (Bookworm) main repositories" >> /etc/apt/sources.list
+echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+echo "deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+echo "# Debian 12 (Bookworm) updates" >> /etc/apt/sources.list
+echo "deb http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+echo "deb-src http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+echo "# Security updates" >> /etc/apt/sources.list
+echo "deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+echo "deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+echo "# Backports (optional, if you want newer versions of some packages)" >> /etc/apt/sources.list
+echo "deb http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+echo "deb-src http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list
+sudo apt update
+sudo apt upgrade -y
+")
+
+		// Exit the session after commands are done
+		fmt.Fprintln(stdin, "exit")
+	}()
+
+	// Capture the session output and print to console
+	go io.Copy(os.Stdout, stdout)
+
+	// Wait for the session to complete
+	err = session.Wait()
+	if err != nil {
+		log.Fatalf("Session finished with error: %v", err)
+	}
+
+	fmt.Println("Commands executed successfully on the remote server after switching to root.")
 }
