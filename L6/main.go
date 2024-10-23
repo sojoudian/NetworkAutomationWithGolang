@@ -96,23 +96,26 @@ func main() {
 		time.Sleep(1 * time.Second) // Wait for the prompt
 		fmt.Fprintln(stdin, password)
 
-		// Run the necessary commands after switching to root
-		fmt.Fprintln(stdin, "
-echo "# Debian 12 (Bookworm) main repositories" >> /etc/apt/sources.list
-echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "# Debian 12 (Bookworm) updates" >> /etc/apt/sources.list
-echo "deb http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "deb-src http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "# Security updates" >> /etc/apt/sources.list
-echo "deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "# Backports (optional, if you want newer versions of some packages)" >> /etc/apt/sources.list
-echo "deb http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-echo "deb-src http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" >> /etc/apt/sources.list
-sudo apt update
-sudo apt upgrade -y
-")
+		// Send individual commands to update sources.list
+		fmt.Fprintln(stdin, "echo '# Debian 12 (Bookworm) main repositories' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+
+		fmt.Fprintln(stdin, "echo '# Debian 12 (Bookworm) updates' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb-src http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+
+		fmt.Fprintln(stdin, "echo '# Security updates' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+
+		fmt.Fprintln(stdin, "echo '# Backports (optional, if you want newer versions of some packages)' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+		fmt.Fprintln(stdin, "echo 'deb-src http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware' | sudo tee -a /etc/apt/sources.list")
+
+		// Run apt update and upgrade
+		fmt.Fprintln(stdin, "sudo apt update")
+		fmt.Fprintln(stdin, "sudo apt upgrade -y")
 
 		// Exit the session after commands are done
 		fmt.Fprintln(stdin, "exit")
