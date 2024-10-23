@@ -5,77 +5,78 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
-	"strings"
+	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func main() {
-	// Ask the user for the Debian server IP address
+	// Take user inputs for the server IP, username, and password
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter the Debian server IP address: ")
 	serverIP, _ := reader.ReadString('\n')
+	serverIP = serverIP[:len(serverIP)-1] // Trim newline
 
-	// Trim any trailing newline characters from the input
-	serverIP = strings.TrimSpace(serverIP)
+	fmt.Print("Enter the username: ")
+	username, _ := reader.ReadString('\n')
+	username = username[:len(username)-1] // Trim newline
 
-	// Define the repositories to be added to sources.list
-	repoLines := `
-# Debian 12 (Bookworm) main repositories
-deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
+	fmt.Print("Enter the password: ")
+	password, _ := reader.ReadString('\n')
+	password = password[:len(password)-1] // Trim newline
 
-# Debian 12 (Bookworm) updates
-deb http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware
-
-# Security updates
-deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-
-# Backports (optional, if you want newer versions of some packages)
-deb http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware
-`
-
-	// Path to sources.list
-	sourcesList := "/etc/apt/sources.list"
-
-	// Step 1: Open the sources.list file in append mode
-	file, err := os.OpenFile(sourcesList, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open %s: %v", sourcesList, err)
-	}
-	defer file.Close()
-
-	// Step 2: Append the repository lines to sources.list
-	_, err = file.WriteString(repoLines)
-	if err != nil {
-		log.Fatalf("Failed to write to %s: %v", sourcesList, err)
+	// SSH configuration
+	config := &ssh.ClientConfig{
+		User: username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Avoid strict host key checking for this demo
+		Timeout:         5 * time.Second,             // Set timeout for connection
 	}
 
-	fmt.Println("Successfully added Debian 12 repositories to sources.list")
-
-	// Step 3: Run "apt update"
-	fmt.Println("Running apt update...")
-	cmdUpdate := exec.Command("sudo", "apt", "update")
-	cmdUpdate.Stdout = os.Stdout
-	cmdUpdate.Stderr = os.Stderr
-
-	err = cmdUpdate.Run()
+	// Connect to the remote server
+	conn, err := ssh.Dial("tcp", serverIP+":22", config)
 	if err != nil {
-		log.Fatalf("Failed to run apt update: %v", err)
+		log.Fatalf("Failed to dial: %s", err)
 	}
-	fmt.Println("apt update completed successfully.")
+	defer conn.Close()
 
-	// Step 4: Run "apt upgrade -y"
-	fmt.Println("Running apt upgrade -y...")
-	cmdUpgrade := exec.Command("sudo", "apt", "upgrade", "-y")
-	cmdUpgrade.Stdout = os.Stdout
-	cmdUpgrade.Stderr = os.Stderr
-
-	err = cmdUpgrade.Run()
+	// Create a session
+	session, err := conn.NewSession()
 	if err != nil {
-		log.Fatalf("Failed to run apt upgrade: %v", err)
+		log.Fatalf("Failed to create session: %s", err)
 	}
-	fmt.Println("apt upgrade completed successfully.")
+	defer session.Close()
+
+	// // Capture both stdout and stderr from the session
+	// var stdoutBuf, stderrBuf io.Writer
+	// session.Stdout = os.Stdout
+	// session.Stderr = os.Stderr
+
+	// Run the necessary commands on the remote server
+	commands := `
+	echo "# Debian 12 (Bookworm) main repositories" | sudo tee -a /etc/apt/sources.list
+	echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	echo "deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	echo "# Debian 12 (Bookworm) updates" | sudo tee -a /etc/apt/sources.list
+	echo "deb http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	echo "deb-src http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	echo "# Security updates" | sudo tee -a /etc/apt/sources.list
+	echo "deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	echo "deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	echo "# Backports (optional, if you want newer versions of some packages)" | sudo tee -a /etc/apt/sources.list
+	echo "deb http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	echo "deb-src http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware" | sudo tee -a /etc/apt/sources.list
+	sudo apt update
+	sudo apt upgrade -y
+	`
+
+	// Run the commands on the remote server
+	err = session.Run(commands)
+	if err != nil {
+		log.Fatalf("Failed to run commands on remote server: %v", err)
+	}
+
+	fmt.Println("Commands executed successfully on the remote server.")
 }
