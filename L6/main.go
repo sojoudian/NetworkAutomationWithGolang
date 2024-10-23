@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -57,20 +56,18 @@ func main() {
 	}
 	defer session.Close()
 
-	// Get a pseudo-terminal (PTY) for interaction with `su -`
+	// Request a pseudo-terminal (PTY) to handle interactive commands
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          0,     // Disable echoing
 		ssh.TTY_OP_ISPEED: 14400, // Input speed = 14.4kbaud
 		ssh.TTY_OP_OSPEED: 14400, // Output speed = 14.4kbaud
 	}
-
-	// Request a PTY to handle interactive commands
 	err = session.RequestPty("xterm", 80, 40, modes)
 	if err != nil {
 		log.Fatalf("Failed to request PTY: %v", err)
 	}
 
-	// Start the shell
+	// Create pipes for session input/output
 	stdin, err := session.StdinPipe()
 	if err != nil {
 		log.Fatalf("Failed to get stdin pipe: %v", err)
@@ -87,14 +84,29 @@ func main() {
 		log.Fatalf("Failed to start shell: %v", err)
 	}
 
-	// Switch to root user with `su -` and provide password
+	// Capture the stdout and look for the password prompt
 	go func() {
-		// Send `su -` command
-		fmt.Fprintln(stdin, "su -")
+		buf := make([]byte, 1024)
+		for {
+			n, _ := stdout.Read(buf)
+			output := string(buf[:n])
+			fmt.Print(output) // Print output to terminal for debugging
 
-		// Simulate typing the password for `su -`
-		time.Sleep(1 * time.Second) // Wait for the prompt
-		fmt.Fprintln(stdin, password)
+			// Look for the password prompt after `su -`
+			if strings.Contains(output, "Password:") {
+				fmt.Fprintln(stdin, password) // Send the password for `su -`
+				break
+			}
+		}
+	}()
+
+	// Send `su -` command
+	fmt.Fprintln(stdin, "su -")
+
+	// Wait for the session to become root, then send commands
+	go func() {
+		// Wait for a short while before sending commands
+		time.Sleep(2 * time.Second)
 
 		// Send individual commands to update sources.list
 		fmt.Fprintln(stdin, "echo '# Debian 12 (Bookworm) main repositories' | sudo tee -a /etc/apt/sources.list")
@@ -120,9 +132,6 @@ func main() {
 		// Exit the session after commands are done
 		fmt.Fprintln(stdin, "exit")
 	}()
-
-	// Capture the session output and print to console
-	go io.Copy(os.Stdout, stdout)
 
 	// Wait for the session to complete
 	err = session.Wait()
