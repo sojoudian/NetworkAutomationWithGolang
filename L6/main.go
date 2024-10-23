@@ -1,13 +1,23 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 func main() {
+	// Ask the user for the Debian server IP address
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter the Debian server IP address: ")
+	serverIP, _ := reader.ReadString('\n')
+
+	// Trim any trailing newline characters from the input
+	serverIP = strings.TrimSpace(serverIP)
+
 	// Define the repositories to be added to sources.list
 	repoLines := `
 # Debian 12 (Bookworm) main repositories
