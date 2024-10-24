@@ -11,19 +11,15 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const sourcesListContent = `# Debian 12 (Bookworm) main repositories
-deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
+const sourcesListContent = `deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
 deb-src http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware
 
-# Debian 12 (Bookworm) updates
 deb http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware
 deb-src http://deb.debian.org/debian/ bookworm-updates main contrib non-free non-free-firmware
 
-# Security updates
 deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
 deb-src http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
 
-# Backports (optional, if you want newer versions of some packages)
 deb http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware
 deb-src http://deb.debian.org/debian/ bookworm-backports main contrib non-free non-free-firmware`
 
@@ -57,17 +53,10 @@ func main() {
 	}
 	defer client.Close()
 
-	// Create expect install script
-	expectInstallScript := fmt.Sprintf(`expect << 'EOF'
-spawn su -
-expect "Password: "
-send "%s\r"
-expect "# "
-send "which expect || (apt-get update && apt-get install -y expect)\r"
-expect "# "
-send "exit\r"
-expect eof
-EOF`, *rootPass)
+	// Create shell script to install expect
+	installScript := fmt.Sprintf(`#!/bin/bash
+echo '%s' | su - root -c 'apt-get update && apt-get install -y expect'
+`, *rootPass)
 
 	// First ensure expect is installed
 	session, err := client.NewSession()
@@ -75,9 +64,9 @@ EOF`, *rootPass)
 		log.Fatalf("Failed to create session: %s", err)
 	}
 
-	fmt.Println("Checking if expect is installed...")
-	if err := runCommand(session, expectInstallScript); err != nil {
-		log.Fatalf("Failed to verify/install expect: %s", err)
+	fmt.Println("Installing expect...")
+	if err := runCommand(session, installScript); err != nil {
+		log.Fatalf("Failed to install expect: %s", err)
 	}
 	session.Close()
 
@@ -89,9 +78,7 @@ send "%s\r"
 expect "# "
 send "cp /etc/apt/sources.list /etc/apt/sources.list.backup\r"
 expect "# "
-send "cat > /etc/apt/sources.list << 'EOSOURCES'\r"
-send "%s\r"
-send "EOSOURCES\r"
+send "echo '%s' > /etc/apt/sources.list\r"
 expect "# "
 send "apt update\r"
 expect "# "
