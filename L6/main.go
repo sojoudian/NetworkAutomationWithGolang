@@ -57,8 +57,32 @@ func main() {
 	}
 	defer client.Close()
 
-	// Create expect-like script for su authentication
-	suScript := fmt.Sprintf(`expect << 'EOF'
+	// Create expect install script
+	expectInstallScript := fmt.Sprintf(`expect << 'EOF'
+spawn su -
+expect "Password: "
+send "%s\r"
+expect "# "
+send "which expect || (apt-get update && apt-get install -y expect)\r"
+expect "# "
+send "exit\r"
+expect eof
+EOF`, *rootPass)
+
+	// First ensure expect is installed
+	session, err := client.NewSession()
+	if err != nil {
+		log.Fatalf("Failed to create session: %s", err)
+	}
+
+	fmt.Println("Checking if expect is installed...")
+	if err := runCommand(session, expectInstallScript); err != nil {
+		log.Fatalf("Failed to verify/install expect: %s", err)
+	}
+	session.Close()
+
+	// Create main update script
+	updateScript := fmt.Sprintf(`expect << 'EOF'
 spawn su -
 expect "Password: "
 send "%s\r"
@@ -77,18 +101,6 @@ send "exit\r"
 expect eof
 EOF`, *rootPass, sourcesListContent)
 
-	// First ensure expect is installed
-	session, err := client.NewSession()
-	if err != nil {
-		log.Fatalf("Failed to create session: %s", err)
-	}
-
-	fmt.Println("Checking if expect is installed...")
-	if err := runCommand(session, "which expect || (apt-get update && apt-get install -y expect)"); err != nil {
-		log.Fatalf("Failed to verify/install expect: %s", err)
-	}
-	session.Close()
-
 	// Create new session for the main script
 	session, err = client.NewSession()
 	if err != nil {
@@ -96,9 +108,9 @@ EOF`, *rootPass, sourcesListContent)
 	}
 	defer session.Close()
 
-	// Run the expect script
+	// Run the main update script
 	fmt.Println("Executing system update process...")
-	if err := runCommand(session, suScript); err != nil {
+	if err := runCommand(session, updateScript); err != nil {
 		log.Fatalf("Failed to execute update process: %s", err)
 	}
 
