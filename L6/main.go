@@ -53,13 +53,32 @@ func main() {
 	}
 	defer client.Close()
 
-	// Create shell script to install expect
+	// First, update sources.list to remove CD-ROM entry and add HTTP sources
+	updateSourcesScript := fmt.Sprintf(`#!/bin/bash
+echo '%s' | su - -c '
+cp /etc/apt/sources.list /etc/apt/sources.list.backup
+echo "%s" > /etc/apt/sources.list
+'
+`, *rootPass, sourcesListContent)
+
+	// Update sources.list first
+	session, err := client.NewSession()
+	if err != nil {
+		log.Fatalf("Failed to create session: %s", err)
+	}
+
+	fmt.Println("Updating sources.list...")
+	if err := runCommand(session, updateSourcesScript); err != nil {
+		log.Fatalf("Failed to update sources.list: %s", err)
+	}
+	session.Close()
+
+	// Now install expect
 	installScript := fmt.Sprintf(`#!/bin/bash
-echo '%s' | su - root -c 'apt-get update && apt-get install -y expect'
+echo '%s' | su - -c 'apt-get update && apt-get install -y expect'
 `, *rootPass)
 
-	// First ensure expect is installed
-	session, err := client.NewSession()
+	session, err = client.NewSession()
 	if err != nil {
 		log.Fatalf("Failed to create session: %s", err)
 	}
@@ -70,15 +89,11 @@ echo '%s' | su - root -c 'apt-get update && apt-get install -y expect'
 	}
 	session.Close()
 
-	// Create main update script
+	// Create system update script
 	updateScript := fmt.Sprintf(`expect << 'EOF'
 spawn su -
 expect "Password: "
 send "%s\r"
-expect "# "
-send "cp /etc/apt/sources.list /etc/apt/sources.list.backup\r"
-expect "# "
-send "echo '%s' > /etc/apt/sources.list\r"
 expect "# "
 send "apt update\r"
 expect "# "
@@ -86,16 +101,16 @@ send "apt upgrade -y\r"
 expect "# "
 send "exit\r"
 expect eof
-EOF`, *rootPass, sourcesListContent)
+EOF`, *rootPass)
 
-	// Create new session for the main script
+	// Create new session for the system update
 	session, err = client.NewSession()
 	if err != nil {
 		log.Fatalf("Failed to create session: %s", err)
 	}
 	defer session.Close()
 
-	// Run the main update script
+	// Run the system update
 	fmt.Println("Executing system update process...")
 	if err := runCommand(session, updateScript); err != nil {
 		log.Fatalf("Failed to execute update process: %s", err)
