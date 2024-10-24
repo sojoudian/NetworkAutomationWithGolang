@@ -31,11 +31,12 @@ func main() {
 	host := flag.String("host", "", "SSH server hostname or IP")
 	user := flag.String("user", "", "SSH username")
 	pass := flag.String("pass", "", "SSH password")
+	rootPass := flag.String("rootpass", "", "Root password")
 	flag.Parse()
 
 	// Validate input
-	if *host == "" || *user == "" || *pass == "" {
-		log.Fatal("Please provide all required flags: -host, -user, and -pass")
+	if *host == "" || *user == "" || *pass == "" || *rootPass == "" {
+		log.Fatal("Please provide all required flags: -host, -user, -pass, and -rootpass")
 	}
 
 	// Configure SSH client
@@ -55,63 +56,64 @@ func main() {
 	}
 	defer client.Close()
 
-	// Create a new SSH session
+	// Create expect-like script for su authentication
+	suScript := fmt.Sprintf(`expect << 'EOF'
+spawn su -
+expect "Password: "
+send "%s\r"
+expect "# "
+send "cp /etc/apt/sources.list /etc/apt/sources.list.backup\r"
+expect "# "
+send "cat > /etc/apt/sources.list << 'EOSOURCES'\r"
+send "%s\r"
+send "EOSOURCES\r"
+expect "# "
+send "apt update\r"
+expect "# "
+send "apt upgrade -y\r"
+expect "# "
+send "exit\r"
+expect eof
+EOF`, *rootPass, sourcesListContent)
+
+	// First ensure expect is installed
 	session, err := client.NewSession()
+	if err != nil {
+		log.Fatalf("Failed to create session: %s", err)
+	}
+
+	fmt.Println("Checking if expect is installed...")
+	if err := runCommand(session, "which expect || (apt-get update && apt-get install -y expect)"); err != nil {
+		log.Fatalf("Failed to verify/install expect: %s", err)
+	}
+	session.Close()
+
+	// Create new session for the main script
+	session, err = client.NewSession()
 	if err != nil {
 		log.Fatalf("Failed to create session: %s", err)
 	}
 	defer session.Close()
 
-	// Backup existing sources.list
-	backupCmd := "cp /etc/apt/sources.list /etc/apt/sources.list.backup"
-	if err := runCommand(session, backupCmd); err != nil {
-		log.Fatalf("Failed to backup sources.list: %s", err)
+	// Run the expect script
+	fmt.Println("Executing system update process...")
+	if err := runCommand(session, suScript); err != nil {
+		log.Fatalf("Failed to execute update process: %s", err)
 	}
-	session.Close()
-
-	// Create new session for writing sources.list
-	session, err = client.NewSession()
-	if err != nil {
-		log.Fatalf("Failed to create session: %s", err)
-	}
-
-	// Write new sources.list
-	writeCmd := fmt.Sprintf("echo '%s' | sudo tee /etc/apt/sources.list", sourcesListContent)
-	if err := runCommand(session, writeCmd); err != nil {
-		log.Fatalf("Failed to write sources.list: %s", err)
-	}
-	session.Close()
-
-	// Run apt update
-	session, err = client.NewSession()
-	if err != nil {
-		log.Fatalf("Failed to create session: %s", err)
-	}
-	fmt.Println("Running apt update...")
-	if err := runCommand(session, "sudo apt update"); err != nil {
-		log.Fatalf("Failed to run apt update: %s", err)
-	}
-	session.Close()
-
-	// Run apt upgrade
-	session, err = client.NewSession()
-	if err != nil {
-		log.Fatalf("Failed to create session: %s", err)
-	}
-	fmt.Println("Running apt upgrade...")
-	if err := runCommand(session, "sudo apt upgrade -y"); err != nil {
-		log.Fatalf("Failed to run apt upgrade: %s", err)
-	}
-	session.Close()
 
 	fmt.Println("Update process completed successfully!")
 }
 
 func runCommand(session *ssh.Session, command string) error {
-	// Create pipe for capturing output
+	// Create pipes for capturing output
 	stdout, err := session.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %s", err)
+	}
+
+	stderr, err := session.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %s", err)
 	}
 
 	// Start command
@@ -119,11 +121,21 @@ func runCommand(session *ssh.Session, command string) error {
 		return fmt.Errorf("failed to start command: %s", err)
 	}
 
-	// Print output in real-time
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		fmt.Println(scanner.Text())
-	}
+	// Print stdout in real-time
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			fmt.Println(scanner.Text())
+		}
+	}()
+
+	// Print stderr in real-time
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			fmt.Fprintf(stderr, "Error: %s\n", scanner.Text())
+		}
+	}()
 
 	// Wait for command to complete
 	if err := session.Wait(); err != nil {
