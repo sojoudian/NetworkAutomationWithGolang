@@ -23,7 +23,7 @@ This Go application automates the process of updating the sources.list file on a
 
 1. Clone the repository:
 ```bash
-git clone [your-repository-url]
+git clone [https://github.com/sojoudian/NetworkAutomationWithGolang.git
 cd debian-updater
 ```
 
