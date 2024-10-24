@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -133,7 +134,7 @@ func runCommand(session *ssh.Session, command string) error {
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			fmt.Fprintf(stderr, "Error: %s\n", scanner.Text())
+			fmt.Fprintf(os.Stderr, "Error: %s\n", scanner.Text())
 		}
 	}()
 
