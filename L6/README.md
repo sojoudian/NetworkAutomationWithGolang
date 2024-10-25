@@ -24,7 +24,7 @@ This Go application automates the process of updating the sources.list file on a
 1. Clone the repository:
 ```bash
 git clone [https://github.com/sojoudian/NetworkAutomationWithGolang.git
-cd debian-updater
+cd NetworkAutomationWithGolang/L6/
 ```
 
 2. Install the required dependency:
